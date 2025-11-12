@@ -1,113 +1,101 @@
 
 import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from 'react';
 import { Style, Collection, Comment } from '../types';
-import { MOCK_STYLES } from '../data/styles';
-import { MOCK_COLLECTIONS } from '../data/collections';
-import { MOCK_COMMENTS } from '../data/comments';
 import { useAuth } from './AuthContext';
+import * as api from '../services/api';
 import { validateTitle, validateSref, validateDescription, validateComment } from '../utils/validation';
 import { ValidationError, AuthenticationError, logError } from '../utils/errorHandling';
 
 interface StyleContextType {
   styles: Style[];
-  addStyle: (style: Omit<Style, 'id' | 'slug' | 'views' | 'likes' | 'likedBy' | 'creatorId' | 'createdAt' | 'updatedAt'>) => void;
+  addStyle: (style: Omit<Style, 'id' | 'slug' | 'views' | 'likes' | 'likedBy' | 'creatorId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   getStyleBySlug: (slug: string) => Style | undefined;
   incrementViewCount: (slug: string) => void;
-  toggleLike: (styleId: string) => void;
+  toggleLike: (styleId: string) => Promise<void>;
+  refreshStyles: () => Promise<void>;
 
   collections: Collection[];
   getCollectionById: (id: string) => Collection | undefined;
   getUserCollections: (userId: string) => Collection[];
-  addCollection: (name: string, description: string) => void;
-  updateCollection: (id: string, name: string, description: string) => void;
-  deleteCollection: (id: string) => void;
+  addCollection: (name: string, description: string) => Promise<void>;
+  updateCollection: (id: string, name: string, description: string) => Promise<void>;
+  deleteCollection: (id: string) => Promise<void>;
   isStyleInCollection: (styleId: string, collectionId: string) => boolean;
-  toggleStyleInCollection: (styleId: string, collectionId: string) => void;
+  toggleStyleInCollection: (styleId: string, collectionId: string) => Promise<void>;
+  refreshCollections: () => Promise<void>;
 
   getCommentsForStyle: (styleId: string) => Comment[];
-  addComment: (styleId: string, text: string) => void;
+  addComment: (styleId: string, text: string) => Promise<void>;
+
+  isLoading: boolean;
 }
 
 const StyleContext = createContext<StyleContextType | undefined>(undefined);
 
-const STYLES_STORAGE_KEY = 'midjourney_style_library_styles';
-const COLLECTIONS_STORAGE_KEY = 'midjourney_style_library_collections';
-const COMMENTS_STORAGE_KEY = 'midjourney_style_library_comments';
-
 export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { currentUser } = useAuth();
 
-  const [styles, setStyles] = useState<Style[]>(() => {
-    try {
-      const localData = window.localStorage.getItem(STYLES_STORAGE_KEY);
-      if (localData) return JSON.parse(localData);
-    } catch (error) {
-      logError(error as Error, { context: 'styles load from localStorage' });
-    }
-    window.localStorage.setItem(STYLES_STORAGE_KEY, JSON.stringify(MOCK_STYLES));
-    return MOCK_STYLES;
-  });
+  const [styles, setStyles] = useState<Style[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [comments, setComments] = useState<{ [styleId: string]: Comment[] }>({});
+  const [isLoading, setIsLoading] = useState(true);
 
-  const [collections, setCollections] = useState<Collection[]>(() => {
-    try {
-      const localData = window.localStorage.getItem(COLLECTIONS_STORAGE_KEY);
-      if (localData) {
-        const parsed = JSON.parse(localData);
-        // Migrate old collections without userId
-        const migrated = parsed.map((col: Collection) => ({
-          ...col,
-          userId: col.userId || 'user-1' // Default to first mock user for old data
-        }));
-        return migrated;
+  // Load styles on mount
+  useEffect(() => {
+    const loadStyles = async () => {
+      try {
+        const fetchedStyles = await api.getStyles();
+        setStyles(fetchedStyles);
+      } catch (error) {
+        logError(error as Error, { context: 'loadStyles' });
+      } finally {
+        setIsLoading(false);
       }
-    } catch (error) {
-      logError(error as Error, { context: 'collections load from localStorage' });
-    }
-    // Add userId to mock collections
-    const migratedMockCollections = MOCK_COLLECTIONS.map(col => ({
-      ...col,
-      userId: 'user-1' // Assign to first mock user
-    }));
-    window.localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify(migratedMockCollections));
-    return migratedMockCollections;
-  });
+    };
 
-  const [comments, setComments] = useState<Comment[]>(() => {
-    try {
-      const localData = window.localStorage.getItem(COMMENTS_STORAGE_KEY);
-      if (localData) return JSON.parse(localData);
-    } catch (error) {
-      logError(error as Error, { context: 'comments load from localStorage' });
-    }
-    window.localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(MOCK_COMMENTS));
-    return MOCK_COMMENTS;
-  });
+    loadStyles();
+  }, []);
 
+  // Load collections when user changes
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STYLES_STORAGE_KEY, JSON.stringify(styles));
-    } catch (error) {
-      logError(error as Error, { context: 'styles save to localStorage' });
-    }
-  }, [styles]);
+    const loadCollections = async () => {
+      if (!currentUser) {
+        setCollections([]);
+        return;
+      }
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(COLLECTIONS_STORAGE_KEY, JSON.stringify(collections));
-    } catch (error) {
-      logError(error as Error, { context: 'collections save to localStorage' });
-    }
-  }, [collections]);
+      try {
+        const fetchedCollections = await api.getCollections();
+        setCollections(fetchedCollections);
+      } catch (error) {
+        logError(error as Error, { context: 'loadCollections' });
+      }
+    };
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(COMMENTS_STORAGE_KEY, JSON.stringify(comments));
-    } catch (error) {
-      logError(error as Error, { context: 'comments save to localStorage' });
-    }
-  }, [comments]);
+    loadCollections();
+  }, [currentUser]);
 
-  const addStyle = useCallback((newStyleData: Omit<Style, 'id' | 'slug' | 'views' | 'likes' | 'likedBy' | 'creatorId' | 'createdAt' | 'updatedAt'>) => {
+  const refreshStyles = useCallback(async () => {
+    try {
+      const fetchedStyles = await api.getStyles();
+      setStyles(fetchedStyles);
+    } catch (error) {
+      logError(error as Error, { context: 'refreshStyles' });
+      throw error;
+    }
+  }, []);
+
+  const refreshCollections = useCallback(async () => {
+    try {
+      const fetchedCollections = await api.getCollections();
+      setCollections(fetchedCollections);
+    } catch (error) {
+      logError(error as Error, { context: 'refreshCollections' });
+      throw error;
+    }
+  }, []);
+
+  const addStyle = useCallback(async (newStyleData: Omit<Style, 'id' | 'slug' | 'views' | 'likes' | 'likedBy' | 'creatorId' | 'createdAt' | 'updatedAt'>): Promise<void> => {
     if (!currentUser) {
       throw new AuthenticationError("User must be logged in to create a style.");
     }
@@ -141,29 +129,22 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       throw new ValidationError('Maximum 4 images allowed');
     }
 
-    // FIXED: Generate unique slug with timestamp and random string (not just 1000 possibilities)
-    const baseSlug = titleValidation.sanitized.toLowerCase()
-      .replace(/\s+/g, '-')
-      .replace(/[^\w-]+/g, '');
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substr(2, 6);
-    const uniqueSlug = `${baseSlug}-${timestamp}-${randomStr}`;
+    try {
+      const createdStyle = await api.createStyle({
+        title: titleValidation.sanitized,
+        description: newStyleData.description || '',
+        sref: newStyleData.sref,
+        images: newStyleData.images,
+        tags: newStyleData.tags || [],
+        category: newStyleData.category
+      });
 
-    const newStyle: Style = {
-      ...newStyleData,
-      title: titleValidation.sanitized,
-      description: newStyleData.description ? validateDescription(newStyleData.description).sanitized : undefined,
-      id: `style-${timestamp}-${randomStr}`,
-      slug: uniqueSlug,
-      views: 0,
-      likes: 0,
-      likedBy: [],
-      creatorId: currentUser.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    setStyles(prevStyles => [newStyle, ...prevStyles]);
+      // Add to local state
+      setStyles(prevStyles => [createdStyle, ...prevStyles]);
+    } catch (error) {
+      logError(error as Error, { context: 'addStyle' });
+      throw error;
+    }
   }, [currentUser]);
 
   const getStyleBySlug = useCallback((slug: string): Style | undefined => {
@@ -171,25 +152,29 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   }, [styles]);
 
   const incrementViewCount = useCallback((slug: string) => {
+    // Optimistic update
     setStyles(prevStyles => prevStyles.map(s => s.slug === slug ? { ...s, views: s.views + 1 } : s));
+
+    // Backend will increment on fetch, no need for separate API call
   }, []);
 
-  const toggleLike = useCallback((styleId: string) => {
-    if (!currentUser) return;
-    setStyles(prevStyles => prevStyles.map(s => {
-      if (s.id === styleId) {
-        const isLiked = s.likedBy.includes(currentUser.id);
-        return {
-          ...s,
-          likes: isLiked ? s.likes - 1 : s.likes + 1,
-          likedBy: isLiked ? s.likedBy.filter(id => id !== currentUser.id) : [...s.likedBy, currentUser.id]
-        };
-      }
-      return s;
-    }));
+  const toggleLike = useCallback(async (styleId: string) => {
+    if (!currentUser) {
+      throw new AuthenticationError("User must be logged in to like.");
+    }
+
+    try {
+      const updatedStyle = await api.toggleLike(styleId);
+
+      // Update local state
+      setStyles(prevStyles => prevStyles.map(s => s.id === styleId ? updatedStyle : s));
+    } catch (error) {
+      logError(error as Error, { context: 'toggleLike' });
+      throw error;
+    }
   }, [currentUser]);
 
-  const addCollection = useCallback((name: string, description: string) => {
+  const addCollection = useCallback(async (name: string, description: string): Promise<void> => {
     if (!currentUser) {
       throw new AuthenticationError("User must be logged in to create a collection.");
     }
@@ -210,17 +195,18 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       throw new ValidationError(descValidation.error || 'Invalid description');
     }
 
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substr(2, 6);
-    const newCollection: Collection = {
-      id: `coll-${timestamp}-${randomStr}`,
-      name: trimmedName,
-      description: descValidation.sanitized,
-      styleIds: [],
-      userId: currentUser.id, // FIXED: Add userId for ownership
-      createdAt: new Date().toISOString()
-    };
-    setCollections(prev => [newCollection, ...prev]);
+    try {
+      const createdCollection = await api.createCollection({
+        name: trimmedName,
+        description: descValidation.sanitized
+      });
+
+      // Add to local state
+      setCollections(prev => [createdCollection, ...prev]);
+    } catch (error) {
+      logError(error as Error, { context: 'addCollection' });
+      throw error;
+    }
   }, [currentUser]);
 
   const getCollectionById = useCallback((id: string) => {
@@ -231,7 +217,7 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return collections.filter(c => c.userId === userId);
   }, [collections]);
 
-  const updateCollection = useCallback((id: string, name: string, description: string) => {
+  const updateCollection = useCallback(async (id: string, name: string, description: string): Promise<void> => {
     if (!currentUser) {
       throw new AuthenticationError("User must be logged in to update a collection.");
     }
@@ -252,30 +238,34 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       throw new ValidationError(descValidation.error || 'Invalid description');
     }
 
-    setCollections(prev => prev.map(c => {
-      if (c.id === id) {
-        // Check ownership
-        if (c.userId !== currentUser.id) {
-          throw new AuthenticationError("You don't have permission to update this collection.");
-        }
-        return { ...c, name: trimmedName, description: descValidation.sanitized };
-      }
-      return c;
-    }));
+    try {
+      const updatedCollection = await api.updateCollection(id, {
+        name: trimmedName,
+        description: descValidation.sanitized
+      });
+
+      // Update local state
+      setCollections(prev => prev.map(c => c.id === id ? updatedCollection : c));
+    } catch (error) {
+      logError(error as Error, { context: 'updateCollection' });
+      throw error;
+    }
   }, [currentUser]);
 
-  const deleteCollection = useCallback((id: string) => {
+  const deleteCollection = useCallback(async (id: string): Promise<void> => {
     if (!currentUser) {
       throw new AuthenticationError("User must be logged in to delete a collection.");
     }
 
-    setCollections(prev => {
-      const collection = prev.find(c => c.id === id);
-      if (collection && collection.userId !== currentUser.id) {
-        throw new AuthenticationError("You don't have permission to delete this collection.");
-      }
-      return prev.filter(c => c.id !== id);
-    });
+    try {
+      await api.deleteCollection(id);
+
+      // Remove from local state
+      setCollections(prev => prev.filter(c => c.id !== id));
+    } catch (error) {
+      logError(error as Error, { context: 'deleteCollection' });
+      throw error;
+    }
   }, [currentUser]);
 
   const isStyleInCollection = useCallback((styleId: string, collectionId: string) => {
@@ -283,22 +273,23 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return collection ? collection.styleIds.includes(styleId) : false;
   }, [collections]);
 
-  const toggleStyleInCollection = useCallback((styleId: string, collectionId: string) => {
-    setCollections(prev => prev.map(collection => {
-      if (collection.id === collectionId) {
-        const styleExists = collection.styleIds.includes(styleId);
-        const newStyleIds = styleExists ? collection.styleIds.filter(id => id !== styleId) : [...collection.styleIds, styleId];
-        return { ...collection, styleIds: newStyleIds };
-      }
-      return collection;
-    }));
+  const toggleStyleInCollection = useCallback(async (styleId: string, collectionId: string): Promise<void> => {
+    try {
+      const updatedCollection = await api.toggleStyleInCollection(collectionId, styleId);
+
+      // Update local state
+      setCollections(prev => prev.map(c => c.id === collectionId ? updatedCollection : c));
+    } catch (error) {
+      logError(error as Error, { context: 'toggleStyleInCollection' });
+      throw error;
+    }
   }, []);
 
   const getCommentsForStyle = useCallback((styleId: string) => {
-    return comments.filter(c => c.styleId === styleId).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    return comments[styleId] || [];
   }, [comments]);
 
-  const addComment = useCallback((styleId: string, text: string) => {
+  const addComment = useCallback(async (styleId: string, text: string): Promise<void> => {
     if (!currentUser) {
       throw new AuthenticationError("User must be logged in to comment.");
     }
@@ -309,20 +300,41 @@ export const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       throw new ValidationError(commentValidation.error || 'Invalid comment');
     }
 
-    const timestamp = Date.now();
-    const randomStr = Math.random().toString(36).substr(2, 6);
-    const newComment: Comment = {
-      id: `comment-${timestamp}-${randomStr}`,
-      styleId,
-      text: commentValidation.sanitized,
-      authorId: currentUser.id,
-      createdAt: new Date().toISOString()
-    };
-    setComments(prev => [...prev, newComment]);
+    try {
+      const newComment = await api.addComment(styleId, commentValidation.sanitized);
+
+      // Add to local state
+      setComments(prev => ({
+        ...prev,
+        [styleId]: [...(prev[styleId] || []), newComment]
+      }));
+    } catch (error) {
+      logError(error as Error, { context: 'addComment' });
+      throw error;
+    }
   }, [currentUser]);
 
   return (
-    <StyleContext.Provider value={{ styles, addStyle, getStyleBySlug, incrementViewCount, toggleLike, collections, getCollectionById, getUserCollections, addCollection, updateCollection, deleteCollection, isStyleInCollection, toggleStyleInCollection, getCommentsForStyle, addComment }}>
+    <StyleContext.Provider value={{
+      styles,
+      addStyle,
+      getStyleBySlug,
+      incrementViewCount,
+      toggleLike,
+      refreshStyles,
+      collections,
+      getCollectionById,
+      getUserCollections,
+      addCollection,
+      updateCollection,
+      deleteCollection,
+      isStyleInCollection,
+      toggleStyleInCollection,
+      refreshCollections,
+      getCommentsForStyle,
+      addComment,
+      isLoading
+    }}>
       {children}
     </StyleContext.Provider>
   );
