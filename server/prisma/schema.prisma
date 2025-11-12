@@ -1,0 +1,137 @@
+// Prisma Schema for Midjourney Style Library
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String   // Hashed with bcrypt
+  avatar    String?
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  styles      Style[]
+  collections Collection[]
+  comments    Comment[]
+  likes       Like[]
+
+  // Follow relationships
+  followers Follow[] @relation("UserFollowers")
+  following Follow[] @relation("UserFollowing")
+}
+
+model Style {
+  id             String   @id @default(uuid())
+  slug           String   @unique
+  title          String
+  sref           String
+  images         String   // JSON array of image URLs
+  mainImageIndex Int      @default(0)
+  description    String?
+  tags           String   // JSON array
+  params         String   // JSON object with MidjourneyParams
+  views          Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  creatorId String
+  creator   User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  comments  Comment[]
+  likes     Like[]
+
+  // Collections relationship (many-to-many)
+  collections CollectionStyle[]
+
+  @@index([creatorId])
+  @@index([slug])
+}
+
+model Collection {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Styles in this collection (many-to-many)
+  styles CollectionStyle[]
+
+  @@index([userId])
+}
+
+// Junction table for many-to-many relationship between Collection and Style
+model CollectionStyle {
+  collectionId String
+  styleId      String
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  style      Style      @relation(fields: [styleId], references: [id], onDelete: Cascade)
+
+  @@id([collectionId, styleId])
+  @@index([collectionId])
+  @@index([styleId])
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  text      String
+  createdAt DateTime @default(now())
+
+  // Relations
+  styleId  String
+  style    Style  @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([styleId])
+  @@index([authorId])
+}
+
+model Like {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // Relations
+  styleId String
+  style   Style  @relation(fields: [styleId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Ensure a user can only like a style once
+  @@unique([styleId, userId])
+  @@index([styleId])
+  @@index([userId])
+}
+
+model Follow {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  // The user who is following
+  followerId String
+  follower   User   @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+
+  // The user being followed
+  followingId String
+  following   User    @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  // Ensure a user can only follow another user once
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
