@@ -54,5 +54,6 @@ export interface Collection {
   name: string;
   description: string;
   styleIds: string[];
+  userId: string; // Owner of the collection
   createdAt: string;
 }

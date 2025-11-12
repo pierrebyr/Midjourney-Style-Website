@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../hooks/useToast';
 import { Style, MidjourneyParams } from '../types';
 import { parseMidjourneyParams } from '../services/geminiService';
+import { validateImageSize, validateTotalImagesSize } from '../utils/validation';
+import { getUserFriendlyMessage } from '../utils/errorHandling';
 
 const LoadingSpinner = () => (
     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
@@ -111,14 +113,43 @@ const CreatePage: React.FC = () => {
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             const file = e.target.files[0];
+
+            // Validate file type
             if (!file.type.startsWith('image/')) {
                 addToast('Please select an image file.', 'error');
                 return;
             }
+
+            // Check file size before conversion (max 5MB)
+            const fileSizeMB = file.size / (1024 * 1024);
+            if (fileSizeMB > 5) {
+                addToast(`Image file size (${fileSizeMB.toFixed(2)}MB) exceeds 5MB limit. Please compress the image.`, 'error');
+                return;
+            }
+
             try {
                 const base64 = await fileToBase64(file);
-                setImages(prevImages => [...prevImages, base64]);
+
+                // Validate base64 size
+                const sizeValidation = validateImageSize(base64, 5);
+                if (!sizeValidation.valid) {
+                    addToast(sizeValidation.error || 'Image too large', 'error');
+                    return;
+                }
+
+                const newImages = [...images, base64];
+
+                // Validate total images size (max 15MB total)
+                const totalValidation = validateTotalImagesSize(newImages, 15);
+                if (!totalValidation.valid) {
+                    addToast(totalValidation.error || 'Total images size too large', 'warning');
+                    return;
+                }
+
+                setImages(newImages);
+                addToast(`Image added (${sizeValidation.sizeMB.toFixed(2)}MB). Total: ${totalValidation.totalSizeMB.toFixed(2)}MB / 15MB`, 'success');
             } catch (error) {
+                console.error('Image upload error:', error);
                 addToast('Failed to read image file.', 'error');
             }
         }
@@ -126,33 +157,49 @@ const CreatePage: React.FC = () => {
 
     const removeImage = (indexToRemove: number) => {
         setImages(prevImages => prevImages.filter((_, index) => index !== indexToRemove));
+        // FIXED: If removing the first image, mainImageIndex should remain 0 (next image becomes main)
+        // This is already handled correctly since we always use index 0 as main
     };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!currentUser) {
-            addToast('You must be logged in to create a style.', 'error');
-            navigate('/login');
-            return;
-        }
-        if (!title || !sref || images.length === 0) {
-            addToast('Please fill in Title, --sref, and upload at least one Image.', 'error');
-            return;
-        }
 
-        const newStyle: Omit<Style, 'id' | 'slug' | 'views' | 'likes' | 'likedBy' | 'creatorId' | 'createdAt' | 'updatedAt'> = {
-            title,
-            sref,
-            images: images,
-            mainImageIndex,
-            params: { ...parsedParams, sref, raw: rawParams },
-            description,
-            tags,
-        };
+        try {
+            if (!currentUser) {
+                addToast('You must be logged in to create a style.', 'error');
+                navigate('/login');
+                return;
+            }
 
-        addStyle(newStyle);
-        addToast('New style created successfully!', 'success');
-        navigate('/');
+            if (!title || !sref || images.length === 0) {
+                addToast('Please fill in Title, --sref, and upload at least one Image.', 'error');
+                return;
+            }
+
+            // Final validation of total images size
+            const totalValidation = validateTotalImagesSize(images, 15);
+            if (!totalValidation.valid) {
+                addToast(totalValidation.error || 'Total images size too large', 'error');
+                return;
+            }
+
+            const newStyle: Omit<Style, 'id' | 'slug' | 'views' | 'likes' | 'likedBy' | 'creatorId' | 'createdAt' | 'updatedAt'> = {
+                title,
+                sref,
+                images: images,
+                mainImageIndex,
+                params: { ...parsedParams, sref, raw: rawParams },
+                description,
+                tags,
+            };
+
+            addStyle(newStyle);
+            addToast('New style created successfully!', 'success');
+            navigate('/');
+        } catch (error) {
+            const errorMessage = getUserFriendlyMessage(error as Error);
+            addToast(errorMessage, 'error');
+        }
     };
 
     const Section: React.FC<{title: string, subtitle: string, children: React.ReactNode, step: number}> = ({title, subtitle, children, step}) => (
@@ -200,7 +247,7 @@ const CreatePage: React.FC = () => {
                                     {Object.entries(parsedParams).map(([key, value]) => {
                                         if(key === 'raw') return null;
                                         const label = `--${key}`;
-                                        return <ParamItem key={key} label={label} value={value as any} />
+                                        return <ParamItem key={key} label={label} value={value as string | number | boolean | undefined} />
                                     })}
                                 </div>
                             </div>

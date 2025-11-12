@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 import { useStyleContext } from '../context/StyleContext';
 import StyleCard from '../components/StyleCard';
 import { Style } from '../types';
+import { useDebounce } from '../hooks/useDebounce';
 
 const SearchIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
@@ -22,6 +23,9 @@ const HomePage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'views' | 'likes' | 'az'>('newest');
 
+  // FIXED: Debounce search term to avoid re-rendering on every keystroke
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
   const [showFilters, setShowFilters] = useState(false);
   const [filterAr, setFilterAr] = useState('');
   const [filterModel, setFilterModel] = useState('');
@@ -29,12 +33,12 @@ const HomePage: React.FC = () => {
   const [filterChaos, setFilterChaos] = useState(0);
 
   const availableArs = useMemo(() => {
-    const ars = new Set(styles.map(s => s.params.ar).filter(Boolean as any as (x: string | undefined) => x is string));
+    const ars = new Set(styles.map(s => s.params.ar).filter((ar): ar is string => typeof ar === 'string'));
     return Array.from(ars).sort();
   }, [styles]);
 
   const availableModels = useMemo(() => {
-    const models = new Set(styles.map(s => s.params.model).filter(Boolean as any as (x: string | undefined) => x is string));
+    const models = new Set(styles.map(s => s.params.model).filter((model): model is string => typeof model === 'string'));
     return Array.from(models).sort();
   }, [styles]);
   
@@ -49,9 +53,9 @@ const HomePage: React.FC = () => {
   const filteredAndSortedStyles = useMemo(() => {
     let processedStyles = [...styles];
 
-    // Text Search Filter
-    if (searchTerm) {
-      const lowerCaseSearch = searchTerm.toLowerCase();
+    // Text Search Filter (using debounced value)
+    if (debouncedSearchTerm) {
+      const lowerCaseSearch = debouncedSearchTerm.toLowerCase();
       processedStyles = processedStyles.filter(style =>
         style.title.toLowerCase().includes(lowerCaseSearch) ||
         style.sref.includes(lowerCaseSearch) ||
@@ -89,7 +93,7 @@ const HomePage: React.FC = () => {
     });
 
     return processedStyles;
-  }, [styles, searchTerm, sortBy, filterAr, filterModel, filterStylize, filterChaos]);
+  }, [styles, debouncedSearchTerm, sortBy, filterAr, filterModel, filterStylize, filterChaos]);
 
   const activeFilterCount = [filterAr, filterModel, filterStylize > 0, filterChaos > 0].filter(Boolean).length;
 
@@ -122,7 +126,7 @@ const HomePage: React.FC = () => {
             <select
                 className="w-full md:w-auto px-4 py-2.5 border rounded-lg bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-brand-primary focus:border-transparent outline-none transition-all"
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
+                onChange={(e) => setSortBy(e.target.value as 'newest' | 'views' | 'likes' | 'az')}
             >
                 <option value="newest">Sort by Newest</option>
                 <option value="views">Sort by Most Viewed</option>
