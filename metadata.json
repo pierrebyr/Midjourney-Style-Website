@@ -1,0 +1,5 @@
+{
+  "name": "Midjourney Style Library",
+  "description": "A web app to upload, search, and sort Midjourney style references. Users can quickly copy --sref values and view detailed parameters for creative inspiration.",
+  "requestFramePermissions": []
+}
