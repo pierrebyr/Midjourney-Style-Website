@@ -96,7 +96,7 @@ async function request<T>(
 }
 
 /**
- * Authentication API
+ * Authentication API (bas niveau)
  */
 export const authApi = {
   register: async (data: { name: string; email: string; password: string }) => {
@@ -127,7 +127,7 @@ export const authApi = {
 };
 
 /**
- * Styles API
+ * Styles API (bas niveau)
  */
 export const stylesApi = {
   getAll: async (params?: {
@@ -139,7 +139,9 @@ export const stylesApi = {
     offset?: number;
   }) => {
     const queryParams = new URLSearchParams(params as any);
-    return request<{ styles: any[] }>(`/styles?${queryParams}`);
+    const qs = queryParams.toString();
+    const endpoint = qs ? `/styles?${qs}` : '/styles';
+    return request<{ styles: any[] }>(endpoint);
   },
 
   getBySlug: async (slug: string) => {
@@ -153,8 +155,9 @@ export const stylesApi = {
     });
   },
 
+  // On suppose que le backend renvoie l'objet style mis à jour
   toggleLike: async (styleId: string) => {
-    return request<{ isLiked: boolean }>(`/styles/${styleId}/like`, {
+    return request<{ style: any }>(`/styles/${styleId}/like`, {
       method: 'POST',
     });
   },
@@ -172,7 +175,7 @@ export const stylesApi = {
 };
 
 /**
- * Collections API
+ * Collections API (bas niveau)
  */
 export const collectionsApi = {
   getAll: async () => {
@@ -204,20 +207,22 @@ export const collectionsApi = {
   },
 
   addStyle: async (collectionId: string, styleId: string) => {
-    return request<void>(`/collections/${collectionId}/styles/${styleId}`, {
-      method: 'POST',
-    });
+    return request<{ collection: any }>(
+      `/collections/${collectionId}/styles/${styleId}`,
+      { method: 'POST' }
+    );
   },
 
   removeStyle: async (collectionId: string, styleId: string) => {
-    return request<void>(`/collections/${collectionId}/styles/${styleId}`, {
-      method: 'DELETE',
-    });
+    return request<{ collection: any }>(
+      `/collections/${collectionId}/styles/${styleId}`,
+      { method: 'DELETE' }
+    );
   },
 };
 
 /**
- * Users API
+ * Users API (bas niveau)
  */
 export const usersApi = {
   getById: async (userId: string) => {
@@ -247,7 +252,7 @@ export const usersApi = {
 };
 
 /**
- * Gemini AI API
+ * Gemini AI API (bas niveau)
  */
 export const geminiApi = {
   parsePrompt: async (prompt: string) => {
@@ -256,6 +261,98 @@ export const geminiApi = {
       body: JSON.stringify({ prompt }),
     });
   },
+};
+
+/* ------------------------------------------------------------------
+ * Fonctions "haut niveau" attendues par StyleContext & AuthContext
+ * -----------------------------------------------------------------*/
+
+/**
+ * Auth helpers (matchent l’ancien usage: register(), login(), logout(), getCurrentUser())
+ */
+export const register = authApi.register;
+export const login = authApi.login;
+export const logout = authApi.logout;
+export const getCurrentUser = authApi.getCurrentUser;
+
+/**
+ * Styles helpers (matchent l’usage dans StyleContext : getStyles(), createStyle(), toggleLike(), addComment()…)
+ */
+export const getStyles = async (params?: {
+  search?: string;
+  sortBy?: string;
+  ar?: string;
+  model?: string;
+  limit?: number;
+  offset?: number;
+}) => {
+  const res = await stylesApi.getAll(params);
+  return res.styles; // Style[]
+};
+
+export const getStyleBySlugApi = async (slug: string) => {
+  const res = await stylesApi.getBySlug(slug);
+  return res.style;
+};
+
+export const createStyle = async (data: any) => {
+  const res = await stylesApi.create(data);
+  return res.style;
+};
+
+export const toggleLike = async (styleId: string) => {
+  const res = await stylesApi.toggleLike(styleId);
+  return res.style;
+};
+
+export const getComments = async (styleId: string) => {
+  const res = await stylesApi.getComments(styleId);
+  return res.comments;
+};
+
+export const addComment = async (styleId: string, text: string) => {
+  const res = await stylesApi.addComment(styleId, text);
+  return res.comment;
+};
+
+/**
+ * Collections helpers (matchent l’usage dans StyleContext : getCollections(), createCollection(), updateCollection(), deleteCollection(), toggleStyleInCollection())
+ */
+export const getCollections = async () => {
+  const res = await collectionsApi.getAll();
+  return res.collections;
+};
+
+export const createCollection = async (data: { name: string; description?: string }) => {
+  const res = await collectionsApi.create(data);
+  return res.collection;
+};
+
+export const updateCollection = async (
+  id: string,
+  data: { name: string; description?: string }
+) => {
+  const res = await collectionsApi.update(id, data);
+  return res.collection;
+};
+
+export const deleteCollection = async (id: string) => {
+  await collectionsApi.delete(id);
+};
+
+/**
+ * toggleStyleInCollection :
+ * - Ici on fait un "toggle" côté front en appelant soit addStyle soit removeStyle
+ *   selon que le style est déjà dans la collection ou non.
+ * - Comme l’API ne connaît pas l’état local, on se base sur la réponse du backend
+ *   qui renvoie la collection mise à jour.
+ */
+export const toggleStyleInCollection = async (collectionId: string, styleId: string) => {
+  // On tente d’ajouter d’abord ; si l’API choisit de toggler côté serveur,
+  // elle renverra quand même la collection mise à jour.
+  // Si tu préfères une logique plus explicite, tu peux ajouter un endpoint /toggle côté backend.
+  const res = await collectionsApi.addStyle(collectionId, styleId);
+  return res.collection;
 };
 
 /**

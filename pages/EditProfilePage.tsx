@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -18,9 +17,9 @@ const EditProfilePage: React.FC = () => {
         if (!currentUser) {
             navigate('/login');
         } else {
-            setName(currentUser.name);
-            setBio(currentUser.bio);
-            setAvatar(currentUser.avatar);
+            setName(currentUser.name || '');
+            setBio(currentUser.bio || ''); // ✅ Correction : garantit que ce n'est jamais null
+            setAvatar(currentUser.avatar || '');
         }
     }, [currentUser, navigate]);
 
@@ -41,7 +40,7 @@ const EditProfilePage: React.FC = () => {
     const formInputClasses = "mt-1 block w-full rounded-md border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 placeholder:text-slate-400 dark:placeholder:text-slate-500 text-slate-900 dark:text-slate-100 transition-colors";
 
     if (!currentUser) {
-        return null; // Or a loading spinner, as the useEffect will redirect
+        return null;
     }
 
     return (
@@ -54,7 +53,19 @@ const EditProfilePage: React.FC = () => {
 
                 <form onSubmit={handleSubmit} className="space-y-6">
                     <div className="flex items-center gap-6">
-                        <img src={avatar} alt="Avatar preview" className="w-24 h-24 rounded-full border-4 border-white dark:border-slate-800 shadow-md"/>
+                        {/* ✅ Correction : affiche l'image seulement si avatar existe */}
+                        {avatar && (
+                            <img 
+                                src={avatar} 
+                                alt="Avatar preview" 
+                                className="w-24 h-24 rounded-full border-4 border-white dark:border-slate-800 shadow-md"
+                            />
+                        )}
+                        {!avatar && (
+                            <div className="w-24 h-24 rounded-full border-4 border-white dark:border-slate-800 shadow-md bg-slate-200 dark:bg-slate-700 flex items-center justify-center">
+                                <span className="text-slate-400 text-sm">No avatar</span>
+                            </div>
+                        )}
                         <div className="flex-grow">
                              <label htmlFor="avatar" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
                                 Avatar URL

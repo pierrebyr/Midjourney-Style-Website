@@ -64,60 +64,92 @@ const basicRegexParse = (prompt: string): Record<string, any> => {
  * Parse Midjourney prompt using Gemini AI
  * POST /api/gemini/parse-prompt
  */
-export const parsePrompt = asyncHandler(async (req: Request, res: Response) => {
-  const { prompt } = req.body;
+export const parsePrompt = asyncHandler(
+  async (req: Request, res: Response): Promise<void> => {
+    const { prompt } = req.body;
 
-  if (!prompt || typeof prompt !== 'string') {
-    throw new AppError('Prompt is required and must be a string', 400);
+    if (!prompt || typeof prompt !== 'string') {
+      throw new AppError('Prompt is required and must be a string', 400);
+    }
+
+    if (prompt.length > 2000) {
+      throw new AppError('Prompt is too long (max 2000 characters)', 400);
+    }
+
+    // Check if API is configured
+    if (!ai || !API_KEY) {
+      console.warn('Gemini API not configured, using fallback regex parser');
+      const fallbackParams = basicRegexParse(prompt);
+      res.json({
+        params: { ...fallbackParams, raw: prompt },
+        method: 'fallback',
+      });
+      return; // ✅ on sort proprement
+    }
+
+    try {
+      const systemInstruction =
+        'You are an expert at parsing Midjourney prompts. Extract all parameters from the user\'s text and return them as a JSON object matching the provided schema. The "model" can be inferred from parameters like "--niji". If a parameter is not present, omit its key from the JSON. The prompt text itself should be ignored. For example, from "a dog --ar 16:9 --sref 123", you extract { ar: "16:9", sref: "123" }.';
+
+      const response = await ai.models.generateContent({
+        model,
+        contents: `Parse the following Midjourney prompt: "${prompt}"`,
+        config: {
+          systemInstruction,
+          responseMimeType: 'application/json',
+          responseSchema,
+        },
+      });
+
+      // ✅ On vérifie que response.text existe bien
+      if (!response || typeof response.text !== 'string') {
+        console.error('Invalid Gemini response:', response);
+        const fallbackParams = basicRegexParse(prompt);
+        res.status(502).json({
+          params: { ...fallbackParams, raw: prompt },
+          method: 'fallback',
+          warning: 'Gemini returned an invalid response, using fallback parser',
+        });
+        return;
+      }
+
+      const jsonText = response.text.trim();
+      let parsedParams: Record<string, any>;
+
+      try {
+        parsedParams = JSON.parse(jsonText);
+      } catch (parseError) {
+        console.error('Failed to parse Gemini JSON response:', parseError, 'RAW:', jsonText);
+        const fallbackParams = basicRegexParse(prompt);
+        res.status(502).json({
+          params: { ...fallbackParams, raw: prompt },
+          method: 'fallback',
+          warning: 'Gemini returned invalid JSON, using fallback parser',
+        });
+        return;
+      }
+
+      // Add raw prompt
+      const finalParams = { ...parsedParams, raw: prompt };
+
+      res.json({
+        params: finalParams,
+        method: 'gemini',
+      });
+      return; // ✅ on sort proprement
+
+    } catch (error) {
+      console.error('Gemini API error:', error);
+
+      // Fallback to regex parsing
+      const fallbackParams = basicRegexParse(prompt);
+
+      res.json({
+        params: { ...fallbackParams, raw: prompt },
+        method: 'fallback',
+        warning: 'Gemini API failed, using fallback parser',
+      });
+      return; // ✅ là aussi
+    }
   }
-
-  if (prompt.length > 2000) {
-    throw new AppError('Prompt is too long (max 2000 characters)', 400);
-  }
-
-  // Check if API is configured
-  if (!ai || !API_KEY) {
-    console.warn('Gemini API not configured, using fallback regex parser');
-    const fallbackParams = basicRegexParse(prompt);
-    return res.json({
-      params: { ...fallbackParams, raw: prompt },
-      method: 'fallback',
-    });
-  }
-
-  try {
-    const systemInstruction = `You are an expert at parsing Midjourney prompts. Extract all parameters from the user's text and return them as a JSON object matching the provided schema. The "model" can be inferred from parameters like "--niji". If a parameter is not present, omit its key from the JSON. The prompt text itself should be ignored. For example, from "a dog --ar 16:9 --sref 123", you extract { ar: "16:9", sref: "123" }.`;
-
-    const response = await ai.models.generateContent({
-      model,
-      contents: `Parse the following Midjourney prompt: "${prompt}"`,
-      config: {
-        systemInstruction,
-        responseMimeType: 'application/json',
-        responseSchema,
-      },
-    });
-
-    const jsonText = response.text.trim();
-    const parsedParams = JSON.parse(jsonText);
-
-    // Add raw prompt
-    const finalParams = { ...parsedParams, raw: prompt };
-
-    res.json({
-      params: finalParams,
-      method: 'gemini',
-    });
-  } catch (error) {
-    console.error('Gemini API error:', error);
-
-    // Fallback to regex parsing
-    const fallbackParams = basicRegexParse(prompt);
-
-    res.json({
-      params: { ...fallbackParams, raw: prompt },
-      method: 'fallback',
-      warning: 'Gemini API failed, using fallback parser',
-    });
-  }
-});
+);

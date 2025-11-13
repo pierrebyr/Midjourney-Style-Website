@@ -11,25 +11,26 @@ export const getStyles = asyncHandler(async (req: Request, res: Response) => {
   const {
     search,
     sortBy = 'newest',
-    ar,
-    model,
-    minStylize,
-    minChaos,
     limit = '50',
     offset = '0',
-  } = req.query;
+  } = req.query as {
+    search?: string;
+    sortBy?: string;
+    limit?: string;
+    offset?: string;
+  };
 
-  const take = Math.min(parseInt(limit as string), 100); // Max 100 items
-  const skip = parseInt(offset as string);
+  const take = Math.min(parseInt(limit, 10), 100); // Max 100 items
+  const skip = parseInt(offset, 10) || 0;
 
   // Build where clause
   const where: any = {};
 
   if (search) {
     where.OR = [
-      { title: { contains: search as string, mode: 'insensitive' } },
-      { sref: { contains: search as string } },
-      { tags: { contains: search as string, mode: 'insensitive' } },
+      { title: { contains: search, mode: 'insensitive' } },
+      { sref: { contains: search } },
+      { tags: { contains: search, mode: 'insensitive' } },
     ];
   }
 
@@ -38,9 +39,12 @@ export const getStyles = asyncHandler(async (req: Request, res: Response) => {
     where,
     take,
     skip,
-    orderBy: sortBy === 'views' ? { views: 'desc' }
-      : sortBy === 'az' ? { title: 'asc' }
-      : { createdAt: 'desc' },
+    orderBy:
+      sortBy === 'views'
+        ? { views: 'desc' }
+        : sortBy === 'az'
+        ? { title: 'asc' }
+        : { createdAt: 'desc' },
     include: {
       creator: {
         select: {
@@ -59,7 +63,7 @@ export const getStyles = asyncHandler(async (req: Request, res: Response) => {
   });
 
   // Parse JSON fields and add like count
-  const formattedStyles = styles.map(style => ({
+  const formattedStyles = styles.map((style) => ({
     ...style,
     images: JSON.parse(style.images),
     tags: JSON.parse(style.tags),
@@ -96,10 +100,12 @@ export const getStyleBySlug = asyncHandler(async (req: Request, res: Response) =
           bio: true,
         },
       },
-      likes: req.user ? {
-        where: { userId: req.user.id },
-        select: { userId: true },
-      } : false,
+      likes: req.user
+        ? {
+            where: { userId: req.user.id },
+            select: { userId: true },
+          }
+        : false,
       _count: {
         select: {
           likes: true,
