@@ -9,25 +9,128 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ============================================
+// ENUMS
+// ============================================
+
+enum SubscriptionTier {
+  FREE      // Free user (authenticated)
+  PREMIUM   // Paid subscription
+  LIFETIME  // Lifetime access (promotional)
+}
+
+enum SubscriptionStatus {
+  INACTIVE   // No active subscription
+  ACTIVE     // Active subscription
+  PAST_DUE   // Payment past due
+  CANCELED   // Canceled
+  TRIALING   // Trial period
+}
+
+enum ProfileVisibility {
+  PUBLIC     // Visible by everyone
+  PRIVATE    // Visible only by user
+  FOLLOWERS  // Visible by followers
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+enum UsageLogAction {
+  VIEW_STYLE
+  CREATE_STYLE
+  LIKE_STYLE
+  COMMENT
+  DOWNLOAD
+}
+
+enum StyleVisibility {
+  PUBLIC      // Visible by all (according to tier)
+  PRIVATE     // Visible only by creator
+  UNLISTED    // Visible only with link
+}
+
+// ============================================
+// MODELS
+// ============================================
+
 model User {
   id        String   @id @default(uuid())
   name      String
   email     String   @unique
   password  String   // Hashed with bcrypt
+
+  // Basic info (existing)
   avatar    String?
   bio       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
+  // Personal information (NEW)
+  firstName      String?
+  lastName       String?
+  dateOfBirth    DateTime?
+  phone          String?
+  country        String?
+  city           String?
+  timezone       String   @default("UTC")
+  language       String   @default("en")
+
+  // Avatar upload (NEW)
+  avatarPath     String?  // Local file path
+  avatarMimeType String?  // image/jpeg, image/png, etc.
+  avatarSize     Int?     // Size in bytes
+
+  // Subscription (NEW)
+  subscriptionTier       SubscriptionTier   @default(FREE)
+  subscriptionStatus     SubscriptionStatus @default(INACTIVE)
+  subscriptionStartDate  DateTime?
+  subscriptionEndDate    DateTime?
+  stripeCustomerId       String?   @unique
+  stripeSubscriptionId   String?   @unique
+
+  // Preferences (NEW)
+  emailNotifications     Boolean   @default(true)
+  marketingEmails        Boolean   @default(false)
+  showEmail              Boolean   @default(false)
+  showDateOfBirth        Boolean   @default(false)
+  profileVisibility      ProfileVisibility @default(PUBLIC)
+
+  // Security (NEW)
+  lastPasswordChange     DateTime?
+  passwordResetToken     String?
+  passwordResetExpires   DateTime?
+  emailVerified          Boolean   @default(false)
+  emailVerificationToken String?
+  twoFactorEnabled       Boolean   @default(false)
+  twoFactorSecret        String?
+
+  // Usage tracking (NEW)
+  stylesCreatedCount     Int       @default(0)
+  lastLoginAt            DateTime?
+  loginCount             Int       @default(0)
+
+  // Relations (existing)
   styles      Style[]
   collections Collection[]
   comments    Comment[]
   likes       Like[]
 
-  // Follow relationships
+  // Follow relationships (existing)
   followers Follow[] @relation("UserFollowers")
   following Follow[] @relation("UserFollowing")
+
+  // New relations
+  subscriptionHistory SubscriptionHistory[]
+  payments            Payment[]
+  usageLog            UsageLog[]
+
+  @@index([email])
+  @@index([subscriptionTier, subscriptionStatus])
 }
 
 model Style {
@@ -44,6 +147,11 @@ model Style {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // Permissions (NEW)
+  visibility        StyleVisibility @default(PUBLIC)
+  isPremiumOnly     Boolean         @default(false)
+  previewImageUrl   String?         // Preview for non-premium users
+
   // Relations
   creatorId String
   creator   User      @relation(fields: [creatorId], references: [id], onDelete: Cascade)
@@ -57,6 +165,7 @@ model Style {
   @@index([slug])
   @@index([createdAt, creatorId]) // For sorting recent styles by creator
   @@index([views, createdAt]) // For sorting by popularity and date
+  @@index([isPremiumOnly, visibility]) // For filtering by permissions
 }
 
 model Collection {
@@ -138,4 +247,69 @@ model Follow {
   @@unique([followerId, followingId])
   @@index([followerId])
   @@index([followingId])
+}
+
+// ============================================
+// NEW MODELS - Subscription & Payments
+// ============================================
+
+// Subscription history tracking
+model SubscriptionHistory {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tier        SubscriptionTier
+  status      SubscriptionStatus
+  startDate   DateTime
+  endDate     DateTime?
+
+  amount      Float?
+  currency    String?  @default("usd")
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, createdAt])
+}
+
+// Payment records
+model Payment {
+  id                String        @id @default(uuid())
+  userId            String
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  amount            Float
+  currency          String        @default("usd")
+  status            PaymentStatus @default(PENDING)
+
+  stripePaymentId   String?       @unique
+  stripeInvoiceId   String?
+
+  description       String?
+  metadata          String?       // JSON for additional data
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Usage tracking and rate limiting
+model UsageLog {
+  id        String          @id @default(uuid())
+  userId    String?
+  user      User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  action    UsageLogAction
+  resourceId String?        // Style ID, Collection ID, etc.
+  ipAddress  String?
+  userAgent  String?
+
+  createdAt DateTime        @default(now())
+
+  @@index([userId, action, createdAt])
+  @@index([ipAddress, action, createdAt])
 }
