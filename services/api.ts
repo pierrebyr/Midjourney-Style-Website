@@ -43,14 +43,29 @@ export class ApiError extends Error {
 }
 
 /**
- * Make HTTP request to API
+ * Sleep utility for exponential backoff
+ */
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Check if HTTP method is idempotent (safe to retry)
+ */
+const isIdempotentMethod = (method?: string): boolean => {
+  const idempotentMethods = ['GET', 'HEAD', 'OPTIONS', 'PUT', 'DELETE'];
+  return idempotentMethods.includes(method?.toUpperCase() || 'GET');
+};
+
+/**
+ * Make HTTP request to API with retry logic and exponential backoff
  */
 async function request<T>(
   endpoint: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retryCount = 0
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   const token = getToken();
+  const maxRetries = 3;
 
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -74,6 +89,19 @@ async function request<T>(
 
     if (!response.ok) {
       const errorData = isJson ? await response.json() : { error: response.statusText };
+
+      // Handle rate limiting with exponential backoff
+      if (response.status === 429 && retryCount < maxRetries) {
+        const retryAfter = response.headers.get('retry-after');
+        const delay = retryAfter
+          ? parseInt(retryAfter) * 1000
+          : Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s
+
+        console.warn(`Rate limited. Retrying after ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+        await sleep(delay);
+        return request<T>(endpoint, options, retryCount + 1);
+      }
+
       throw new ApiError(
         errorData.error || `HTTP ${response.status}`,
         response.status,
@@ -85,6 +113,14 @@ async function request<T>(
   } catch (error) {
     if (error instanceof ApiError) {
       throw error;
+    }
+
+    // Network errors: retry only for idempotent methods
+    if (retryCount < maxRetries && isIdempotentMethod(options.method)) {
+      const delay = Math.pow(2, retryCount) * 1000; // Exponential backoff
+      console.warn(`Network error. Retrying after ${delay}ms (attempt ${retryCount + 1}/${maxRetries})`);
+      await sleep(delay);
+      return request<T>(endpoint, options, retryCount + 1);
     }
 
     // Network or other errors

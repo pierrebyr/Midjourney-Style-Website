@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import dotenv from 'dotenv';
 import { errorHandler } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimiter';
+import { prisma } from './config/database';
+import logger from './utils/logger';
 
 // Load environment variables
 dotenv.config();
@@ -36,13 +38,25 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Apply rate limiting to all API routes
 app.use('/api/', apiLimiter);
 
-// Health check endpoint
-app.get('/health', (req: Request, res: Response) => {
-  res.json({
+// Health check endpoint with database verification
+app.get('/health', async (req: Request, res: Response) => {
+  const health = {
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-  });
+    database: 'unknown' as 'ok' | 'error' | 'unknown',
+  };
+
+  try {
+    // Verify database connection with a simple query
+    await prisma.$queryRaw`SELECT 1`;
+    health.database = 'ok';
+    res.json(health);
+  } catch (error) {
+    health.status = 'degraded';
+    health.database = 'error';
+    res.status(503).json(health);
+  }
 });
 
 // API Routes
@@ -65,7 +79,7 @@ app.use(errorHandler);
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`
+  logger.info(`
 ╔══════════════════════════════════════════╗
 ║  Midjourney Style Library - Backend API ║
 ╚══════════════════════════════════════════╝
@@ -94,12 +108,12 @@ Ready to accept connections! 🎉
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully...');
+  logger.info('SIGTERM received, shutting down gracefully...');
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('SIGINT received, shutting down gracefully...');
+  logger.info('SIGINT received, shutting down gracefully...');
   process.exit(0);
 });
 

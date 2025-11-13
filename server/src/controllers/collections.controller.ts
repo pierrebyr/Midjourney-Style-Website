@@ -72,7 +72,7 @@ export const getCollectionById = asyncHandler(async (req: Request, res: Response
   }
 
   // Format styles
-  const formattedStyles = collection.styles.map(({ style }) => ({
+  const formattedStyles = collection.styles.map(({ style }: any) => ({
     ...style,
     images: JSON.parse(style.images),
     tags: JSON.parse(style.tags),

@@ -1,5 +1,11 @@
 import jwt, { SignOptions, JwtPayload as JwtPayloadBase } from 'jsonwebtoken';
 
+// Validate JWT_SECRET in production
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  console.error('FATAL ERROR: JWT_SECRET is not defined in production environment');
+  process.exit(1);
+}
+
 const JWT_SECRET = process.env.JWT_SECRET || 'your-fallback-secret-change-this';
 
 // On aide TypeScript ici : on dit clairement que c'est du bon type pour expiresIn

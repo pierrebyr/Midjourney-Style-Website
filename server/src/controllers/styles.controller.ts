@@ -63,7 +63,7 @@ export const getStyles = asyncHandler(async (req: Request, res: Response) => {
   });
 
   // Parse JSON fields and add like count
-  const formattedStyles = styles.map((style) => ({
+  const formattedStyles = styles.map((style: any) => ({
     ...style,
     images: JSON.parse(style.images),
     tags: JSON.parse(style.tags),

@@ -55,6 +55,8 @@ model Style {
 
   @@index([creatorId])
   @@index([slug])
+  @@index([createdAt, creatorId]) // For sorting recent styles by creator
+  @@index([views, createdAt]) // For sorting by popularity and date
 }
 
 model Collection {
@@ -72,6 +74,7 @@ model Collection {
   styles CollectionStyle[]
 
   @@index([userId])
+  @@index([userId, createdAt]) // For listing user's collections by date
 }
 
 // Junction table for many-to-many relationship between Collection and Style
@@ -100,6 +103,7 @@ model Comment {
 
   @@index([styleId])
   @@index([authorId])
+  @@index([styleId, createdAt]) // For listing comments on a style chronologically
 }
 
 model Like {

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
+import logger from '../utils/logger';
 
 /**
  * Custom error class
@@ -25,12 +26,13 @@ export const errorHandler = (
   res: Response,
   next: NextFunction
 ): void => {
-  // Log error (in production, use a proper logger like Winston or Pino)
-  console.error('Error:', {
+  // Log error with Winston
+  logger.error('Error occurred:', {
     message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    stack: err.stack,
     url: req.url,
     method: req.method,
+    ip: req.ip,
   });
 
   // Zod validation errors

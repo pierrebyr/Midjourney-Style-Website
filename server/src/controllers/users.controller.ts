@@ -112,7 +112,7 @@ export const getUserStyles = asyncHandler(async (req: Request, res: Response) =>
     },
   });
 
-  const formattedStyles = styles.map(style => ({
+  const formattedStyles = styles.map((style: any) => ({
     ...style,
     images: JSON.parse(style.images),
     tags: JSON.parse(style.tags),
@@ -218,14 +218,14 @@ export const getLeaderboard = asyncHandler(async (req: Request, res: Response) =
   });
 
   // Calculate total likes and sort
-  const usersWithLikes = users.map(user => ({
+  const usersWithLikes = users.map((user: any) => ({
     id: user.id,
     name: user.name,
     avatar: user.avatar,
     stylesCount: user._count.styles,
-    totalLikes: user.styles.reduce((sum, style) => sum + style._count.likes, 0),
+    totalLikes: user.styles.reduce((sum: any, style: any) => sum + style._count.likes, 0),
   }))
-  .sort((a, b) => b.totalLikes - a.totalLikes)
+  .sort((a: any, b: any) => b.totalLikes - a.totalLikes)
   .slice(0, take);
 
   res.json({ users: usersWithLikes });
